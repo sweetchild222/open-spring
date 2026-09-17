@@ -255,12 +255,12 @@ essential prameter"><ins>article_id=817</span></ins></td>
             <tr>
                 <td style="border: 1px solid;"><i>Get</i> api/article/:articleId/comment</td>
                 <td style="border: 1px solid">[<br>&emsp;{<br>&emsp;&emsp;article_id: 817,<br>&emsp;&emsp;like_count: 10,<br>&emsp;&emsp;user_id: 217,<br>&emsp;&emsp;update_at: null,<br>&emsp;&emsp;comment: "test",<br>&emsp;&emsp;id: 755,<br>&emsp;&emsp;<span title="this value has set when comment is reply"><ins>comment_id: null</ins></span>,<br>&emsp;&emsp;create_at: 1789013700000,<br>&emsp;&emsp;dislike_count: 30<br>&emsp;}<br>]</td>
-                <td style="border: 1px solid">the userId<br>and<br>authenticated user_id<br>must be equal</td>
+                <td style="border: 1px solid">permit all</td>
             </tr>
             <tr>
                 <td style="border: 1px solid;"><i>Get</i> api/comment?<br>id=3,5,6</td>
                 <td style="border: 1px solid">[<br>&emsp;{<br>&emsp;&emsp;article_id: 817,<br>&emsp;&emsp;like_count: 10,<br>&emsp;&emsp;user_id: 217,<br>&emsp;&emsp;update_at: null,<br>&emsp;&emsp;comment: "test",<br>&emsp;&emsp;id: 5,<br>&emsp;&emsp;<span title="this value has set when comment is reply"><ins>comment_id: null</ins></span>,<br>&emsp;&emsp;create_at: 1789013700000,<br>&emsp;&emsp;dislike_count: 30<br>&emsp;}<br>]</td>
-                <td style="border: 1px solid">the userId<br>and<br>authenticated user_id<br>must be equal</td>
+                <td style="border: 1px solid">permit all</td>
             </tr>
             <tr>
                 <td style="border: 1px solid"><i>Post</i> api/comment<br><br>{<br>&emsp;comment: 'good',<br>&emsp;user_id: 10,<br>&emsp;<span title="this value has set when comment is reply"><ins>comment_id: 55,</ins></span><br>&emsp;article_id: 15<br>}</td>
