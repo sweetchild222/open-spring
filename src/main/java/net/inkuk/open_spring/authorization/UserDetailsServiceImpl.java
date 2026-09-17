@@ -1,0 +1,45 @@
+package net.inkuk.open_spring.authorization;
+
+import lombok.RequiredArgsConstructor;
+import net.inkuk.open_spring.database.DataBaseClientPool;
+import net.inkuk.open_spring.util.Log;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.stereotype.Service;
+import java.util.List;
+import java.util.Map;
+
+@Service
+@RequiredArgsConstructor
+public class UserDetailsServiceImpl implements UserDetailsService {
+
+    @Override
+    public @NotNull UserDetails loadUserByUsername(@NotNull String username) {
+
+        String sql = "select u.id, u.username, u.password, u.role, b.id as blog_id ";
+        sql += "from user as u left outer join blog as b on u.id=b.user_id ";
+        sql += "where username = '" + username.replace("'", "\\'") + "'";
+
+        final Map<String, Object> map = DataBaseClientPool.getClient().selectRow(sql);
+
+        if(map == null)
+            return SecurityUser.createInvalid();
+
+        if(map.isEmpty())
+            return SecurityUser.createEmpty();
+
+        final long id = (long)map.get("id");
+        final String name = (String)map.get("username");
+        final String password = (String)map.get("password");
+        final String authority = (String)map.get("role");
+        final long blogId = map.get("blog_id") == null ? -1 : (long)map.get("blog_id");
+
+        final List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority(authority));
+
+        return new SecurityUser(id, name, password, authorities, blogId);
+
+    }
+}

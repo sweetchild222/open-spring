@@ -1,0 +1,478 @@
+package net.inkuk.open_spring.controller;
+
+import net.inkuk.open_spring.database.DataBaseClientPool;
+import net.inkuk.open_spring.util.Log;
+import net.inkuk.open_spring.util.CertifyEmailCodeList;
+import net.inkuk.open_spring.util.EMailService;
+import net.inkuk.open_spring.util.PasswordGenerator;
+import net.inkuk.open_spring.util.ObjectCovert;
+import net.inkuk.open_spring.util.QueryParamChecker;
+import net.inkuk.open_spring.util.UserContext;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import java.util.*;
+import java.util.regex.Pattern;
+
+@RestController
+public class UserController {
+
+    private final CertifyEmailCodeList userJoinCertifyCodeList = new CertifyEmailCodeList();
+    private final CertifyEmailCodeList passwordResetCertifyCodeList = new CertifyEmailCodeList();
+    private final EMailService emailService;
+
+    public UserController(EMailService emailService) {
+
+        this.emailService = emailService;
+    }
+
+
+    @GetMapping("/user/{userId}")
+    public ResponseEntity<?> getUser(@PathVariable long userId) {
+
+        String sql = "select u.id as id, u.username, u.image, u.nickname, u.create_at, b.id as blog_id ";
+        sql += "from user as u left outer join blog as b on u.id = b.user_id ";
+        sql += "where u.id = " + userId + " and u.withdraw_at is null";
+
+        final Map<String, Object> map = DataBaseClientPool.getClient().selectRow(sql);
+
+        if(map == null)
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+
+        if(map.isEmpty())
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+
+        return new ResponseEntity<>(map, HttpStatus.OK);
+    }
+
+
+    @GetMapping("/user")
+    public ResponseEntity<?> getUsers(@RequestParam @NotNull Map<String, String> params) {
+
+        String userIds = params.get("id");
+
+        if(!QueryParamChecker.validIntegerList(userIds, 0, null, false, 100))
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        String [] ids = userIds.split(",");
+
+        String sqlCore = "select u.id as id, u.image, u.nickname, u.role, b.id as blog_id ";
+        sqlCore += "from user as u left outer join blog as b on u.id = b.user_id ";
+        sqlCore += "where u.withdraw_at is null and (";
+
+        StringBuilder sqlBuilder = new StringBuilder(sqlCore);
+
+        int count = ids.length;
+
+        for(String id: ids) {
+            count--;
+            sqlBuilder.append("u.id=").append(count > 0 ? (id + " or ") : id + ")");
+        }
+
+        final String sql = sqlBuilder.toString();
+
+        final List<Map<String, Object>> list = DataBaseClientPool.getClient().selectRows(sql);
+
+        if(list == null)
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+
+        return new ResponseEntity<>(list, HttpStatus.OK);
+    }
+
+
+
+    @GetMapping("/user/{username}/exist")
+    public ResponseEntity<?> getUserExist(@PathVariable String username) {
+
+        if(username.length() > 50)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        final String sql = "select count(*) > 0 as exist from user where username = '" + username.replace("'", "\\'") + "'";
+
+        final Map<String, Object> map = DataBaseClientPool.getClient().selectRow(sql);
+
+        if(map == null)
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+
+        if(map.isEmpty())
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+
+        return new ResponseEntity<>(map, HttpStatus.OK);
+    }
+
+
+    private boolean validPassword(String password){
+
+        final String reg = "^(?=.*[A-Z])(?=.*[0-9])(?=.*[a-z])(?=.*[!@#$%^&*()-+=]).{8,20}$";
+
+        final Pattern pattern = Pattern.compile(reg);
+
+        return pattern.matcher(password).matches();
+    }
+
+
+    private boolean validUsername(String username){
+
+        final String reg = "^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,6}$";
+
+        final Pattern pattern = Pattern.compile(reg, Pattern.CASE_INSENSITIVE);
+
+        return pattern.matcher(username).matches();
+    }
+
+
+    @PostMapping("/user")
+    public ResponseEntity<?> postUser(@RequestBody @NotNull Map<String, String> payload) {
+
+        final String username = payload.get("username");
+        final String password = payload.get("password");
+        final String image = payload.get("image");
+        final String nickname = payload.get("nickname");
+
+        if(username == null || password == null || image == null || nickname == null)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        if(username.length() > 50)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        if(!(validPassword(password) && validUsername(username)))
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        if(image.isEmpty())
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        if(nickname.isEmpty())
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        if(!userJoinCertifyCodeList.isCertified(username))
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        userJoinCertifyCodeList.remove(username);
+
+        String sql = "insert ignore into user (username, password, image, nickname) select ";
+        sql += "'" + username.replace("'", "\\'") + "', ";
+        sql += "'" + (new BCryptPasswordEncoder()).encode(password) + "', ";
+        sql += "'" + image.replace("'", "\\'") + "', ";
+        sql += "'" + nickname.replace("'", "\\'") + "' ";
+        sql += "where not exists ";
+        sql += "(select 1 from user where username = '" + username.replace("'", "\\'") + "')";
+
+        final long id = DataBaseClientPool.getClient().insertRow(sql);
+
+        if(id == -1)
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        else if(id == 0)
+            return new ResponseEntity<>(HttpStatus.CONFLICT);
+        else
+            return new ResponseEntity<>(Map.of("id", id), HttpStatus.OK);
+    }
+
+
+    private @Nullable Map<String, String> payloadToSqlItems(final @NotNull Map<String, Object> payload){
+
+        try {
+
+            final Map<String, String> items = new java.util.HashMap<>(Map.of());
+
+            final Boolean is_withdraw = (Boolean) payload.get("withdraw");
+            if (is_withdraw != null) {
+                if (!(is_withdraw && payload.size() == 1))
+                    return null;
+
+                items.put("withdraw_at", "current_timestamp()");
+                items.put("username", "null");
+                items.put("image", "''");
+                items.put("password", "null");
+                items.put("nickname", "''");
+
+                return items;
+            }
+
+            final String password = (String) payload.get("password");
+            if (password != null) {
+
+                if (!validPassword(password))
+                    return null;
+
+                if (payload.size() != 1)
+                    return null;
+
+                items.put("password", "'" + (new BCryptPasswordEncoder()).encode(password) + "'");
+                return items;
+            }
+
+            if (payload.containsKey("image")) {
+                final String image = (String) payload.get("image");
+
+                if(image.length() > 512)
+                    return null;
+
+                items.put("image", (image != null ? ("'" + image.replace("'", "\\'") + "'") : ""));
+            }
+
+
+            if (payload.containsKey("nickname")) {
+                final String nickname = (String) payload.get("nickname");
+
+                if(nickname.length() > 50)
+                    return null;
+
+                items.put("nickname", (nickname != null ? ("'" + nickname.replace("'", "\\'") + "'") : "''"));
+            }
+
+            final String role = (String) payload.get("role");
+            if (role != null) {
+                if (!Arrays.asList(new String[]{"ADMIN", "USER"}).contains(role.toUpperCase()))
+                    return null;
+
+                items.put("role", "'" + role + "'");
+            }
+
+            if (items.size() != payload.size())
+                return null;
+
+            return items;
+
+        } catch (Exception e) {
+
+            Log.error(e.toString());
+            return null;
+        }
+    }
+
+
+    @PostMapping("/user/{userId}/password")
+    public ResponseEntity<?> getCheckPassword(@PathVariable long userId, @RequestBody @NotNull Map<String, String> payload) {
+
+        if(userId != UserContext.userID())
+            return new ResponseEntity<>(HttpStatus.FORBIDDEN);
+
+        final String password = payload.get("password");
+
+        if(password == null)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        final String sql = "select password from user where id=" + userId;
+
+        final Map<String, Object> map = DataBaseClientPool.getClient().selectRow(sql);
+
+        if(map == null)
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+
+        if(map.isEmpty())
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+
+        final String passwordSource = map.get("password").toString();
+
+        boolean match = (new BCryptPasswordEncoder()).matches(password, passwordSource);
+
+        return new ResponseEntity<>(Map.of("correct", match), HttpStatus.OK);
+    }
+
+
+    @PatchMapping("/user/{userId}")
+    public ResponseEntity<?> patchUser(@PathVariable long userId, @RequestBody Map<String, Object> payload) {
+
+        if(userId != UserContext.userID())
+            return new ResponseEntity<>(HttpStatus.FORBIDDEN);
+
+        if(payload.isEmpty())
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        final Map<String, String> items = this.payloadToSqlItems(payload);
+
+        if(items == null)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        final String sql = this.makeUpdateSQL(items, userId);
+
+        final int matchCount = DataBaseClientPool.getClient(UserContext.userID()).updateRow(sql);
+
+        if(matchCount == -1)
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        else if(matchCount == 0)
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        else if(matchCount == 1)
+            return new ResponseEntity<>(HttpStatus.OK);
+        else {
+            Log.error("Unexcepted match count: " + matchCount);
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+
+    private @NotNull String makeUpdateSQL(final @NotNull Map<String, String> items, final long userId){
+
+        int size = items.size();
+
+        StringBuilder sqlBuilder = new StringBuilder("update user set ");
+
+        for(String key : items.keySet()) {
+
+            String value =  items.get(key);
+
+            size--;
+
+            sqlBuilder.append(key).append("=");
+            sqlBuilder.append(value);
+            sqlBuilder.append(size == 0 ? " " : ", ");
+        }
+
+        sqlBuilder.append("where id=").append(userId);
+
+        return sqlBuilder.toString();
+    }
+
+
+
+    @PostMapping("certify/user-join")
+    public ResponseEntity<?> postCertifyUserJoin(@RequestBody @NotNull Map<String, String> payload) {
+
+        final String email = payload.get("email");
+
+        if(email == null)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        if(email.length() > 50)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        final long code = (long)(Math.random() * (90000)) + 100000; //(long) Math.random() * (최댓값-최소값+1) + 최소값
+        final boolean success = this.emailService.sendCertifyCode(email, code);
+
+        if(success) {
+            userJoinCertifyCodeList.remove(email);
+            userJoinCertifyCodeList.add(email, code);
+        }
+
+        return new ResponseEntity<>(success ? HttpStatus.OK : HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+
+    @PatchMapping("certify/user-join")
+    public ResponseEntity<?> patchCertifyUserJoin(@RequestBody @NotNull Map<String, String> payload) {
+
+        final String email = ObjectCovert.asString(payload.get("email"));
+
+        if(email == null)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        if(email.length() > 50)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        final String code = ObjectCovert.asString(payload.get("code"));
+
+        if(!isLong(code))
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        userJoinCertifyCodeList.removeExpired();
+
+        final boolean isMatch = userJoinCertifyCodeList.isMatch(email, Long.parseLong(code));
+
+        if(isMatch)
+            userJoinCertifyCodeList.setCertified(email);
+
+        return new ResponseEntity<>(Map.of("match", isMatch), HttpStatus.OK);
+    }
+
+
+    private boolean isLong(String str) {
+
+        if (str == null || str.trim().isEmpty())
+            return false;
+
+        try {
+            Long.parseLong(str);
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+
+    @PostMapping("certify/password-reset")
+    public ResponseEntity<?> postCertifyPasswordReset(@RequestBody @NotNull Map<String, String> payload) {
+
+        final String email = payload.get("email");
+
+        if(email == null)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        if(email.length() > 50)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        final long code = (long)(Math.random() * (90000)) + 100000; //(long) Math.random() * (최댓값-최소값+1) + 최소값
+        final boolean success = this.emailService.sendCertifyCode(email, code);
+
+        if(success) {
+            passwordResetCertifyCodeList.remove(email);
+            passwordResetCertifyCodeList.add(email, code);
+        }
+
+        return new ResponseEntity<>(success ? HttpStatus.OK : HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+
+    @PatchMapping("certify/password-reset")
+    public ResponseEntity<?> patchCertifyPasswordReset(@RequestBody @NotNull Map<String, String> payload) {
+
+        final String email = ObjectCovert.asString(payload.get("email"));
+
+        if(email == null)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        if(email.length() > 50)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        final String code = ObjectCovert.asString(payload.get("code"));
+
+        if(!isLong(code))
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        passwordResetCertifyCodeList.removeExpired();
+
+        final boolean isMatch = passwordResetCertifyCodeList.isMatch(email, Long.parseLong(code));
+
+        if(isMatch)
+            passwordResetCertifyCodeList.setCertified(email);
+
+        return new ResponseEntity<>(Map.of("match", isMatch), HttpStatus.OK);
+    }
+
+
+    @PatchMapping("password-reset/email/{email}")
+    public ResponseEntity<?> patchEmailPasswordReset(@PathVariable String email) {
+
+        if(email.length() > 50)
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        if(!passwordResetCertifyCodeList.isCertified(email))
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+
+        passwordResetCertifyCodeList.remove(email);
+
+        String password = PasswordGenerator.generate();
+
+        if(!emailService.sendPassword(email, password))
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+
+        String encryptPassword = (new BCryptPasswordEncoder()).encode(password);
+
+        final String sql = "update user set password ='" + encryptPassword + "' where username='" + email.replace("'", "\\'") + "'";
+
+        final int matchCount = DataBaseClientPool.getClient(UserContext.userID()).updateRow(sql);
+
+        if(matchCount == -1)
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        else if(matchCount == 0)
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        else if(matchCount == 1)
+            return new ResponseEntity<>(HttpStatus.OK);
+        else {
+            Log.error("Unexcepted match count: " + matchCount);
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+}

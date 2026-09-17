@@ -1,0 +1,391 @@
+package net.inkuk.open_spring.database;
+
+import net.inkuk.open_spring.util.Log;
+import org.jetbrains.annotations.Nullable;
+import org.springframework.stereotype.Component;
+
+import java.sql.*;
+import java.util.*;
+
+
+public class DataBaseClient {
+
+    private Connection connection = null;
+
+    private Timer timer = null;
+
+    private Connection connect(){
+
+        try {
+
+            final String driver = "org.mariadb.jdbc.Driver";
+            Class.forName(driver);
+
+            String env = System.getenv("ENV");
+
+            final String ip = (env != null && env.equals("DEV")) ? "3.38.108.151" : "127.0.0.1";
+            final String port = "44335";
+
+            final String name = "open_article";
+            final String url = "jdbc:mariadb://" + ip + ":" + port + "/" + name;
+            final String user = "xxxxxxxx";
+            final String password = "xxxxxxxxxx";
+
+            return DriverManager.getConnection(url, user, password);
+
+        } catch (ClassNotFoundException | SQLException e) {
+
+            Log.error(e.toString());
+            return null;
+        }
+    }
+
+
+    private void startPing(){
+
+        if(this.timer != null)
+            return;
+
+        this.timer = new Timer();
+        this.timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+
+                if (connection == null)
+                    return;
+
+                try {
+
+                    Statement statement = connection.createStatement();
+
+                    if (statement == null)
+                        return;
+
+                    statement.closeOnCompletion();
+
+                    ResultSet resultSet = statement.executeQuery("select 1");
+
+                    //Log.debug("ping");
+
+                } catch (SQLException e) {
+
+                    if(e instanceof SQLNonTransientConnectionException)
+                        close();
+
+                    Log.error(e.toString());
+                }
+            }
+        }, 20000, 20000);
+    }
+
+
+
+    public void close() {
+
+        if(this.timer != null) {
+            this.timer.cancel();
+            this.timer = null;
+        }
+
+
+        if(this.connection != null) {
+
+            try {
+                this.connection.close();
+                this.connection = null;
+            }
+            catch(SQLException e){
+
+                Log.error(e.toString());
+            }
+        }
+    }
+
+
+    public Map<String, Object> selectRow(String sql) {
+
+        Log.info(sql);
+
+        try {
+
+            return executeSelectSingle(sql);
+
+        }
+        catch (SQLException e) {
+
+            if(e instanceof SQLNonTransientConnectionException)
+                close();
+
+            Log.error(e.toString());
+            return null;
+        }
+    }
+
+
+    public List<Map<String, Object>> selectRows(String sql) {
+
+        Log.info(sql);
+
+        try {
+
+            return executeSelect(sql);
+
+        }
+        catch (SQLException e) {
+
+            if(e instanceof SQLNonTransientConnectionException)
+                close();
+
+            Log.error(e.toString());
+            return null;
+        }
+    }
+
+
+
+    public long insertRow(String sql) {
+
+        Log.info(sql);
+
+        try {
+
+            return executeInsert(sql);
+        }
+        catch (SQLException e) {
+
+            if(e instanceof SQLNonTransientConnectionException)
+                close();
+
+            Log.error(e.toString());
+            return -1;
+        }
+    }
+
+
+    public int updateRow(String sql) {
+
+        Log.info(sql);
+
+        try {
+
+            return executeUpdate(sql);
+        }
+        catch (SQLException e) {
+
+            if(e instanceof SQLNonTransientConnectionException)
+                close();
+
+            Log.error(e.toString());
+            return -1;
+        }
+    }
+
+
+    public int deleteRow(String sql) {
+
+        Log.info(sql);
+
+        try {
+
+            return executeUpdate(sql);
+        }
+        catch (SQLException e) {
+
+            if(e instanceof SQLNonTransientConnectionException)
+                close();
+
+            Log.error(e.toString());
+            return -1;
+        }
+    }
+
+
+    private @Nullable List<Map<String, Object>> executeSelect(String sql) throws SQLException {
+
+        Connection connection = getConnection();
+
+        if(connection == null)
+            return null;
+
+        Statement statement = connection.createStatement();
+
+        if(statement == null)
+            return null;
+
+        statement.closeOnCompletion();
+
+        ResultSet resultSet =  statement.executeQuery(sql);
+
+        List<Map<String, Object>> list = new LinkedList<>();
+
+        if(!resultSet.first()) {
+            resultSet.close();
+            return list;
+        }
+
+        do{
+
+            Map<String, Object> map = convertMap(resultSet);
+            list.add(map);
+
+        } while(resultSet.next());
+
+        resultSet.close();
+
+        return list;
+    }
+
+
+    private @Nullable Map<String, Object> executeSelectSingle(String sql) throws SQLException {
+
+        Connection connection = getConnection();
+
+        if(connection == null)
+            return null;
+
+        Statement statement = connection.createStatement();
+
+        if(statement == null)
+            return null;
+
+        statement.closeOnCompletion();
+
+        ResultSet resultSet =  statement.executeQuery(sql);
+
+        if(!resultSet.first()) {
+            resultSet.close();
+            return new java.util.HashMap<>(Map.of());
+        }
+
+        Map<String, Object> map = convertMap(resultSet);
+
+        resultSet.close();
+
+        return map;
+    }
+
+
+    private long executeInsert(String sql) throws SQLException {
+
+        Connection connection = getConnection();
+
+        if(connection == null)
+            return -1;
+
+        Statement statement = connection.createStatement();
+
+        if(statement == null)
+            return -1;
+
+        statement.closeOnCompletion();
+
+        int effectCount = statement.executeUpdate(sql, Statement.RETURN_GENERATED_KEYS);
+
+        if(effectCount == 0)
+            return 0;
+        else if(effectCount == 1) {
+
+            ResultSet resultSet = statement.getGeneratedKeys();
+
+            if (resultSet == null)
+                return -1;
+
+            return resultSet.first() ? resultSet.getLong(1) : -1;
+        }
+        else
+            return -1;
+    }
+
+
+    private Connection getConnection(){
+
+        try {
+            if (this.connection != null)
+                if (this.connection.isClosed())
+                    this.connection = null;
+
+            if (this.connection == null) {
+                this.connection = this.connect();
+                if (this.connection != null)
+                    startPing();
+            }
+
+            return this.connection;
+
+        } catch (SQLException e) {
+
+            Log.error(e.toString());
+            return null;
+
+        }
+    }
+
+
+    private int executeUpdate(String sql) throws SQLException {
+
+        Connection connection = getConnection();
+
+        if(connection == null)
+            return -1;
+
+        Statement statement = connection.createStatement();
+
+        if(statement == null)
+            return -1;
+
+        statement.closeOnCompletion();
+
+        return statement.executeUpdate(sql);
+    }
+
+
+    private @Nullable Map<String, Object> convertMap(ResultSet resultSet) throws SQLException {
+
+        final ResultSetMetaData metaData = resultSet.getMetaData();
+
+        Map<String, Object> map = new java.util.HashMap<>(Map.of());
+
+        for(int i = 1; i <= metaData.getColumnCount(); i++) {
+
+            final int columnType = metaData.getColumnType(i);
+            final String columnName = metaData.getColumnLabel(i);
+
+            switch (columnType) {
+                case Types.LONGNVARCHAR:
+                case Types.CHAR:
+                case Types.VARCHAR: {
+                    String value = resultSet.getString(i);
+                    map.put(columnName, resultSet.wasNull() ? null : value);
+                    break;
+                }
+
+                case Types.TIMESTAMP: {
+                    Calendar utcCalendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+                    Timestamp value = resultSet.getTimestamp(i, utcCalendar);
+                    map.put(columnName, resultSet.wasNull() ? null : value.getTime());
+                    break;
+                }
+
+                case Types.BIGINT:
+                case Types.INTEGER: {
+
+                    long value = resultSet.getLong(i);
+                    map.put(columnName, resultSet.wasNull() ? null : value);
+                    break;
+                }
+
+                case Types.TINYINT: {
+                    int value = resultSet.getInt(i);
+                    map.put(columnName, resultSet.wasNull() ? null : value);
+                    break;
+                }
+
+                default:
+                    Log.error(String.valueOf(columnType) + ": Unsupported type " + columnName);
+                    return null;
+            }
+        }
+
+        return map;
+    }
+}
