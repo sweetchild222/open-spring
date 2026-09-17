@@ -2,14 +2,12 @@ package net.inkuk.open_spring;
 
 import jakarta.annotation.PostConstruct;
 import net.inkuk.open_spring.util.Log;
-import net.inkuk.open_spring.util.LogFile;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.context.support.AbstractApplicationContext;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import java.awt.*;
