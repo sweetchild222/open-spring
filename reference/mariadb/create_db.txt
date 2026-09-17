@@ -1,0 +1,13 @@
+sudo mysql -u root -p
+
+create database open_article;
+show open_article;
+use open_article;
+
+create user '{username}'@'%' identified by '{password}';
+
+GRANT ALL PRIVILEGES ON open_article.* TO '{username}'@'%' IDENTIFIED BY '{password}' with GRANT OPTION;
+
+revoke create, alter, drop on open_article.* from '{username}'@'%';
+
+flush privileges;

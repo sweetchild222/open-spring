@@ -1,0 +1,23 @@
+server {
+
+	listen [::]:4431;
+	listen 4431;
+
+	server_name 3.38.108.151;
+
+	client_max_body_size 10M;
+
+	location /api/ {
+
+		proxy_pass http://localhost:56633/;
+		proxy_set_header Host $host;
+		proxy_set_header X-Real-IP $remote_addr;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto $scheme;
+	}
+
+}
+
+
+
+

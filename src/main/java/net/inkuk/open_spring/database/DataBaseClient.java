@@ -28,8 +28,8 @@ public class DataBaseClient {
 
             final String name = "open_article";
             final String url = "jdbc:mariadb://" + ip + ":" + port + "/" + name;
-            final String user = "xxxxxxxx";
-            final String password = "xxxxxxxxxx";
+            final String user = "{username}";
+            final String password = "{password}";
 
             return DriverManager.getConnection(url, user, password);
 
