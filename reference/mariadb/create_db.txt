@@ -4,10 +4,10 @@ create database open_article;
 show open_article;
 use open_article;
 
-create user '{username}'@'%' identified by '{password}';
+create user 'open_article_api'@'%' identified by 'open_article_api@0917';
 
-GRANT ALL PRIVILEGES ON open_article.* TO '{username}'@'%' IDENTIFIED BY '{password}' with GRANT OPTION;
+GRANT ALL PRIVILEGES ON open_article.* TO 'open_article_api'@'%' IDENTIFIED BY 'open_article_api@0917' with GRANT OPTION;
 
-revoke create, alter, drop on open_article.* from '{username}'@'%';
+revoke create, alter, drop on open_article.* from 'open_article_api'@'%';
 
 flush privileges;
