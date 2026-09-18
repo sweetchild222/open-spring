@@ -19,7 +19,7 @@ public class JwtUtil {
 
     private SecretKey getSigningKey() {
 
-        final String key = "Asakljsd93wfsakld0fdfafd232ssd09dsklsjsd93wfa34234";
+        final String key = "Asakljsakl09dsklsjsd93wfsd0fdfafd232ssdd93wfa34234";
 
         final byte[] keyBytes = Decoders.BASE64.decode(key);
 
