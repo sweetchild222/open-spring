@@ -23,7 +23,7 @@ public class DataBaseClient {
 
             String env = System.getenv("ENV");
 
-            final String ip = (env != null && env.equals("DEV")) ? "3.38.108.151" : "127.0.0.1";
+            final String ip = (env != null && env.equals("DEV")) ? "13.124.70.161" : "127.0.0.1";
             final String port = "44335";
 
             final String name = "open_article";
